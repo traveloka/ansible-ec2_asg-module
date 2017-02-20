@@ -369,7 +369,7 @@ def elb_healthy(asg_connection, elb_connection, elb2_connection, module, group_n
     for instance in asg['Instances']:
         if (instance['LifecycleState'] == 'InService' and instance['HealthStatus'] == 'Healthy'):
             if (launch_config_name):
-                if (instance['LaunchConfigurationName'] == launch_config_name):
+                if (('LaunchConfigurationName' in instance) and (instance['LaunchConfigurationName'] == launch_config_name)):
                     instances.append({
                         'InstanceId': instance['InstanceId']
                     })
@@ -456,7 +456,7 @@ def wait_for_elb(asg_connection, elb_connection, elb2_connection, module, group_
             time.sleep(10)
         if (wait_timeout <= time.time()):
             # waiting took too long
-            module.fail_json(msg="Waited too long for ELB instances to be healthy. %s" % time.asctime())
+            module.fail_json(msg="Waited too long for ELB instances with lc " + launch_config_name + " (" + str(min_size) + ") to be healthy. %s" % time.asctime())
         log.debug("Waiting complete.  ELB thinks {0} instances are healthy.".format(healthy_instances))
 
 
@@ -776,7 +776,7 @@ def replace(asg_connection, elb_connection, elb2_connection, module):
                                                                     module, min_size, desired_capacity, i, instances,
                                                                     False)
         if (not break_early):
-            minimal_instance = minimal_instance + len(i)
+            minimal_instance = minimal_instance + len(term_instances)
         wait_for_term_inst(asg_connection, module, term_instances)
         wait_for_new_inst(module, asg_connection, group_name, wait_timeout, desired_size)
         wait_for_elb(asg_connection, elb_connection, elb2_connection, module, group_name, launch_config_name, minimal_instance)
@@ -797,7 +797,7 @@ def get_instances_by_lc(asg, lc_check, initial_instances):
     # old instances are those that have the old launch config
     if (lc_check):
         for i in asg['Instances']:
-            if (i['LaunchConfigurationName'] == asg['LaunchConfigurationName']):
+            if (('LaunchConfigurationName' in i) and (i['LaunchConfigurationName'] == asg['LaunchConfigurationName'])):
                 new_instances.append(i)
             else:
                 old_instances.append(i)
@@ -828,7 +828,7 @@ def list_purgeable_instances(asg, lc_check, replace_instances, initial_instances
     # and they have a non-current launch config
     if (lc_check):
         for i in instances:
-            if (i['LaunchConfigurationName'] != asg['LaunchConfigurationName']):
+            if ((not ('LaunchConfigurationName' in i)) or (i['LaunchConfigurationName'] != asg['LaunchConfigurationName'])):
                 instances_to_terminate.append(i)
     else:
         for i in instances:
@@ -873,8 +873,7 @@ def terminate_batch(asg_connection, elb_connection, elb2_connection, module, min
         instances_to_terminate = old_instances
         desired_size = min_size
         log.debug("No new instances needed")
-
-    if (num_new_inst_needed < batch_size and num_new_inst_needed != 0):
+    elif (num_new_inst_needed < batch_size):
         instances_to_terminate = instances_to_terminate[:num_new_inst_needed]
         decrement_capacity = False
         break_loop = False
